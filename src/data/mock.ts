@@ -1,11 +1,20 @@
 import type { Locale } from "@/i18n/translations";
 
-export type OrderStatus = "new" | "preparing" | "ready" | "delivering" | "completed" | "cancelled";
+export type OrderStatus =
+  | "new"
+  | "accepted"
+  | "preparing"
+  | "ready"
+  | "pickedup"
+  | "delivering"
+  | "completed"
+  | "cancelled";
 
 export interface OrderItem {
   name: { ar: string; en: string; ku: string };
   qty: number;
   price: number;
+  notes?: { ar: string; en: string; ku: string };
 }
 
 export interface Order {
@@ -14,9 +23,12 @@ export interface Order {
   phone: string;
   items: OrderItem[];
   total: number;
+  deliveryFee: number;
   status: OrderStatus;
   minutesAgo: number;
+  acceptDeadlineSec?: number; // remaining seconds to accept (for new orders)
   address: { ar: string; en: string; ku: string };
+  paymentMethod: { ar: string; en: string; ku: string };
 }
 
 export const ORDERS: Order[] = [
