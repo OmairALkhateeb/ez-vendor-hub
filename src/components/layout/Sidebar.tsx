@@ -44,7 +44,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     labelKey: "nav.section.account",
-    items: [{ to: "/settings", icon: Settings, key: "nav.settings" }],
+    items: [
+      { to: "/settings", icon: Settings, key: "nav.settings" },
+      { to: "/states", icon: LifeBuoy, key: "nav.states" },
+    ],
   },
 ];
 
