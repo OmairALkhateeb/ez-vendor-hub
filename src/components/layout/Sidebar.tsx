@@ -36,7 +36,8 @@ const SECTIONS: NavSection[] = [
   {
     labelKey: "nav.section.business",
     items: [
-      { to: "/performance", icon: BarChart3, key: "nav.reports" },
+      { to: "/reports", icon: BarChart3, key: "nav.reports" },
+      { to: "/performance", icon: BarChart3, key: "nav.performance" },
       { to: "/wallet", icon: Wallet, key: "nav.wallet" },
       { to: "/reviews", icon: Star, key: "nav.reviews" },
     ],
