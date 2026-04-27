@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/i18n/AppProviders";
 import { PageHeader, StatusPill } from "@/components/ui-ez/Primitives";
+import { EmptyOrders } from "@/components/ui-ez/States";
 import { ORDERS, pickName, formatMoney, type Order, type OrderStatus } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -196,9 +197,11 @@ function OrdersPage() {
               />
             ))}
             {visible.length === 0 && (
-              <div className="grid place-items-center p-16 text-sm text-muted-foreground">
-                <Package className="mb-3 h-10 w-10 opacity-30" />
-                {t("orders.noOrders")}
+              <div className="p-4">
+                <EmptyOrders
+                  title={t("states.emptyOrdersTitle")}
+                  description={t("states.emptyOrdersDesc")}
+                />
               </div>
             )}
           </div>
