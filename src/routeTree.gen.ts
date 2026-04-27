@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReviewsRouteImport } from './routes/reviews'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PerformanceRouteImport } from './routes/performance'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as MenuRouteImport } from './routes/menu'
@@ -30,6 +31,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ReviewsRoute = ReviewsRouteImport.update({
   id: '/reviews',
   path: '/reviews',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PerformanceRoute = PerformanceRouteImport.update({
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
+  '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/wallet': typeof WalletRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
+  '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/wallet': typeof WalletRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
+  '/reports': typeof ReportsRoute
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/wallet': typeof WalletRoute
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
     | '/menu'
     | '/orders'
     | '/performance'
+    | '/reports'
     | '/reviews'
     | '/settings'
     | '/wallet'
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/menu'
     | '/orders'
     | '/performance'
+    | '/reports'
     | '/reviews'
     | '/settings'
     | '/wallet'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/menu'
     | '/orders'
     | '/performance'
+    | '/reports'
     | '/reviews'
     | '/settings'
     | '/wallet'
@@ -116,6 +128,7 @@ export interface RootRouteChildren {
   MenuRoute: typeof MenuRoute
   OrdersRoute: typeof OrdersRoute
   PerformanceRoute: typeof PerformanceRoute
+  ReportsRoute: typeof ReportsRoute
   ReviewsRoute: typeof ReviewsRoute
   SettingsRoute: typeof SettingsRoute
   WalletRoute: typeof WalletRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/reviews'
       fullPath: '/reviews'
       preLoaderRoute: typeof ReviewsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/performance': {
@@ -180,6 +200,7 @@ const rootRouteChildren: RootRouteChildren = {
   MenuRoute: MenuRoute,
   OrdersRoute: OrdersRoute,
   PerformanceRoute: PerformanceRoute,
+  ReportsRoute: ReportsRoute,
   ReviewsRoute: ReviewsRoute,
   SettingsRoute: SettingsRoute,
   WalletRoute: WalletRoute,
