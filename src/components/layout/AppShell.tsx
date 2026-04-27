@@ -9,7 +9,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Sidebar />
-      <div className={cn("flex min-h-screen flex-col", dir === "rtl" ? "lg:pe-[260px]" : "lg:ps-[260px]")}>
+      <div
+        className={cn(
+          "flex min-h-screen flex-col",
+          dir === "rtl" ? "lg:mr-[260px]" : "lg:ml-[260px]"
+        )}
+      >
         <Topbar />
         <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">{children}</main>
       </div>
