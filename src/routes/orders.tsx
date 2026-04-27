@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/i18n/AppProviders";
 import { PageHeader, StatusPill } from "@/components/ui-ez/Primitives";
+import { EmptyOrders } from "@/components/ui-ez/States";
 import { ORDERS, pickName, formatMoney, type Order, type OrderStatus } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
