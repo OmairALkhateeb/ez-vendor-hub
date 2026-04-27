@@ -54,24 +54,26 @@ export function StatCard({
   );
 }
 
-export function StatusPill({ status }: { status: string }) {
+export function StatusPill({ status, label }: { status: string; label?: string }) {
   const map: Record<string, string> = {
-    new: "bg-info/10 text-info border-info/20",
+    new: "bg-info/10 text-info border-info/30",
+    accepted: "bg-primary/10 text-primary border-primary/25",
     preparing: "bg-warning/15 text-warning-foreground border-warning/30",
-    ready: "bg-primary/10 text-primary border-primary/20",
-    delivering: "bg-info/10 text-info border-info/20",
-    completed: "bg-success/10 text-success border-success/20",
-    cancelled: "bg-destructive/10 text-destructive border-destructive/20",
+    ready: "bg-success/10 text-success border-success/25",
+    pickedup: "bg-info/10 text-info border-info/25",
+    delivering: "bg-info/10 text-info border-info/25",
+    completed: "bg-success/10 text-success border-success/25",
+    cancelled: "bg-destructive/10 text-destructive border-destructive/25",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize",
         map[status] ?? "bg-muted text-muted-foreground border-border"
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {status}
+      {label ?? status}
     </span>
   );
 }
