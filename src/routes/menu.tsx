@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useApp } from "@/i18n/AppProviders";
 import { PageHeader } from "@/components/ui-ez/Primitives";
+import { EmptyMenu } from "@/components/ui-ez/States";
 import {
   CATEGORIES,
   ITEMS,
