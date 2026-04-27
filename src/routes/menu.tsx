@@ -311,8 +311,12 @@ function MenuPage() {
           {/* Items list */}
           <div className="p-3">
             {filtered.length === 0 ? (
-              <div className="grid place-items-center py-16 text-sm text-muted-foreground">
-                {t("menu.empty")}
+              <div className="p-4">
+                <EmptyMenu
+                  title={t("states.emptyMenuTitle")}
+                  description={t("states.emptyMenuDesc")}
+                  actionLabel={t("menu.addItem")}
+                />
               </div>
             ) : (
               <ul className="divide-y divide-border">
