@@ -181,6 +181,12 @@ export const CATEGORIES: MenuCategory[] = [
   { id: "c7", name: { ar: "حلويات", en: "Desserts", ku: "شیرینی" }, itemsCount: 6, active: false },
 ];
 
+export interface AddOn {
+  id: string;
+  name: { ar: string; en: string; ku: string };
+  price: number;
+}
+
 export interface MenuItem {
   id: string;
   category: string;
@@ -189,6 +195,8 @@ export interface MenuItem {
   price: number;
   available: boolean;
   sold: number;
+  image?: string; // emoji placeholder
+  addons?: AddOn[];
 }
 
 export const ITEMS: MenuItem[] = [
