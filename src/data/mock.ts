@@ -181,6 +181,12 @@ export const CATEGORIES: MenuCategory[] = [
   { id: "c7", name: { ar: "حلويات", en: "Desserts", ku: "شیرینی" }, itemsCount: 6, active: false },
 ];
 
+export interface AddOn {
+  id: string;
+  name: { ar: string; en: string; ku: string };
+  price: number;
+}
+
 export interface MenuItem {
   id: string;
   category: string;
@@ -189,47 +195,92 @@ export interface MenuItem {
   price: number;
   available: boolean;
   sold: number;
+  image?: string; // emoji placeholder
+  addons?: AddOn[];
 }
 
 export const ITEMS: MenuItem[] = [
   {
-    id: "i1", category: "c1",
+    id: "i1", category: "c1", image: "🍔",
     name: { ar: "برغر دجاج كلاسيك", en: "Classic Chicken Burger", ku: "برگەری مریشک" },
-    desc: { ar: "صدر دجاج مقرمش مع صلصة خاصة", en: "Crispy chicken breast with house sauce", ku: "سنگی مریشکی برژاو" },
+    desc: { ar: "صدر دجاج مقرمش مع صلصة خاصة وخس طازج", en: "Crispy chicken breast with house sauce", ku: "سنگی مریشکی برژاو" },
     price: 8500, available: true, sold: 142,
+    addons: [
+      { id: "a1", name: { ar: "جبنة إضافية", en: "Extra Cheese", ku: "پەنیری زیاتر" }, price: 1000 },
+      { id: "a2", name: { ar: "بيكون", en: "Bacon", ku: "بەیکن" }, price: 1500 },
+      { id: "a3", name: { ar: "صلصة حارة", en: "Spicy Sauce", ku: "سۆسی تین" }, price: 500 },
+    ],
   },
   {
-    id: "i2", category: "c2",
+    id: "i1b", category: "c1", image: "🍔",
+    name: { ar: "برغر لحم دبل", en: "Double Beef Burger", ku: "برگەری دووهێندە" },
+    desc: { ar: "قطعتان من اللحم البقري مع جبنة شيدر", en: "Two beef patties with cheddar", ku: "دوو پارچە گۆشت" },
+    price: 12000, available: true, sold: 87,
+    addons: [{ id: "a4", name: { ar: "بطاطا جانبية", en: "Side Fries", ku: "پەتاتە" }, price: 2500 }],
+  },
+  {
+    id: "i2", category: "c2", image: "🍕",
     name: { ar: "بيتزا مارغريتا", en: "Margherita Pizza", ku: "پیتزای مارگاریتا" },
     desc: { ar: "موزاريلا، طماطم، ريحان طازج", en: "Mozzarella, tomato, fresh basil", ku: "موزارێلا و تەماتە" },
     price: 14000, available: true, sold: 98,
+    addons: [
+      { id: "a5", name: { ar: "حواف بالجبن", en: "Cheese Crust", ku: "لێواری پەنیر" }, price: 2000 },
+    ],
   },
   {
-    id: "i3", category: "c3",
+    id: "i2b", category: "c2", image: "🍕",
+    name: { ar: "بيتزا بيبروني", en: "Pepperoni Pizza", ku: "پیتزای پێپڕۆنی" },
+    desc: { ar: "بيبروني، موزاريلا، صلصة طماطم", en: "Pepperoni, mozzarella, tomato sauce", ku: "پێپڕۆنی و پەنیر" },
+    price: 16000, available: true, sold: 112,
+  },
+  {
+    id: "i3", category: "c3", image: "🌯",
     name: { ar: "شاورما لحم", en: "Beef Shawarma", ku: "شاورمای گۆشت" },
     desc: { ar: "لفّة لحم بقري مع خضار وثوم", en: "Beef wrap with veggies and garlic", ku: "گۆشتی گا لەگەڵ سەوزە" },
     price: 5500, available: true, sold: 215,
+    addons: [
+      { id: "a6", name: { ar: "ثوم إضافي", en: "Extra Garlic", ku: "سیری زیاتر" }, price: 500 },
+      { id: "a7", name: { ar: "مخللات", en: "Pickles", ku: "تورشی" }, price: 500 },
+    ],
   },
   {
-    id: "i4", category: "c4",
+    id: "i3b", category: "c3", image: "🌯",
+    name: { ar: "شاورما دجاج", en: "Chicken Shawarma", ku: "شاورمای مریشک" },
+    desc: { ar: "دجاج متبل مع صلصة الثوم", en: "Marinated chicken with garlic sauce", ku: "مریشکی توومڵە کراو" },
+    price: 5000, available: true, sold: 188,
+  },
+  {
+    id: "i4", category: "c4", image: "🍢",
     name: { ar: "كباب مشكل", en: "Mixed Kebab", ku: "کەبابی تێکەڵ" },
-    desc: { ar: "تشكيلة كباب مع أرز", en: "Assorted kebab with rice", ku: "کەبابی جۆراوجۆر" },
+    desc: { ar: "تشكيلة كباب مع أرز ومخللات", en: "Assorted kebab with rice", ku: "کەبابی جۆراوجۆر" },
     price: 18000, available: true, sold: 76,
   },
   {
-    id: "i5", category: "c5",
+    id: "i5", category: "c5", image: "🥗",
     name: { ar: "حمص", en: "Hummus", ku: "حومس" },
     desc: { ar: "حمص بالطحينة وزيت زيتون", en: "Hummus with tahini and olive oil", ku: "حومس لەگەڵ تەحینە" },
     price: 4000, available: true, sold: 130,
   },
   {
-    id: "i6", category: "c6",
+    id: "i5b", category: "c5", image: "🥗",
+    name: { ar: "متبل باذنجان", en: "Baba Ghanoush", ku: "بابا غەنووش" },
+    desc: { ar: "باذنجان مشوي مع طحينة", en: "Grilled eggplant with tahini", ku: "بادەمجانی برژاو" },
+    price: 4500, available: false, sold: 64,
+  },
+  {
+    id: "i6", category: "c6", image: "🥤",
     name: { ar: "بيبسي", en: "Pepsi", ku: "پێپسی" },
     desc: { ar: "علبة 330مل", en: "330ml can", ku: "قوتوی ٣٣٠ مل" },
     price: 1500, available: true, sold: 320,
   },
   {
-    id: "i7", category: "c7",
+    id: "i6b", category: "c6", image: "💧",
+    name: { ar: "ماء معدني", en: "Mineral Water", ku: "ئاوی کانزایی" },
+    desc: { ar: "قنينة 500مل", en: "500ml bottle", ku: "بوتڵی ٥٠٠ مل" },
+    price: 500, available: true, sold: 410,
+  },
+  {
+    id: "i7", category: "c7", image: "🍰",
     name: { ar: "كنافة", en: "Knafeh", ku: "کنافە" },
     desc: { ar: "كنافة بالجبن مع قطر", en: "Cheese knafeh with syrup", ku: "کنافە بە پەنیر" },
     price: 5000, available: false, sold: 44,
