@@ -8,6 +8,7 @@ import {
   Star,
   Settings,
   LifeBuoy,
+  Palette,
 } from "lucide-react";
 import { useApp } from "@/i18n/AppProviders";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,7 @@ const SECTIONS: NavSection[] = [
     labelKey: "nav.section.account",
     items: [
       { to: "/settings", icon: Settings, key: "nav.settings" },
+      { to: "/design-system", icon: Palette, key: "nav.designSystem" },
       { to: "/states", icon: LifeBuoy, key: "nav.states" },
     ],
   },
