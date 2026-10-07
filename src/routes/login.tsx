@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api/client";
 import { errorMessage } from "@/components/ui-ez/QueryState";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/logo.png";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
@@ -86,9 +87,7 @@ function LoginPage() {
       <div className="w-full max-w-md">
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl ez-gradient text-lg font-bold text-primary-foreground ez-shadow">
-            EZ
-          </div>
+          <img src={logo} alt="EZ" className="h-16 w-16 object-contain" />
           <h1 className="mt-4 text-2xl font-bold tracking-tight">{t("app.name")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{t("app.tagline")}</p>
         </div>

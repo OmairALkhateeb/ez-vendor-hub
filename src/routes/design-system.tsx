@@ -37,7 +37,7 @@ function DesignSystemPage() {
       {/* Section: Colors */}
       <Section title={t("ds.colors")} description={t("ds.colorsDesc")}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Swatch name="primary" cssVar="--color-primary" hex="#E62020" />
+          <Swatch name="primary" cssVar="--color-primary" hex="#8FD91C" />
           <Swatch name="primary-soft" cssVar="--color-primary-soft" />
           <Swatch name="success" cssVar="--color-success" />
           <Swatch name="warning" cssVar="--color-warning" />

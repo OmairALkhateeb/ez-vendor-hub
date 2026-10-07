@@ -20,7 +20,7 @@ const STORAGE_THEME = "ez.theme";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>("ar");
-  const [theme, setThemeState] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
