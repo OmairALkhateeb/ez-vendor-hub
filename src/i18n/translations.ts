@@ -1,3 +1,5 @@
+import { apiTranslations } from "./translations.api";
+
 export type Locale = "ar" | "en" | "ku";
 
 export const LOCALES: { code: Locale; label: string; dir: "rtl" | "ltr" }[] = [
@@ -982,3 +984,6 @@ export const translations: Record<Locale, Dict> = {
     "reports.dateRange": "ماوەی بەروار",
   },
 };
+
+// Strings added with the backend integration.
+for (const l of ["ar", "en", "ku"] as const) Object.assign(translations[l], apiTranslations[l]);

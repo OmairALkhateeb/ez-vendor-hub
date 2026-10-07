@@ -1,17 +1,52 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
-  Check, X, MapPin, Phone, Search, RefreshCw, Printer, Clock,
-  ChefHat, PackageCheck, Bike, CheckCircle2, XCircle, CircleDot,
-  Receipt, User, AlertTriangle, Package,
+  Check,
+  X,
+  MapPin,
+  Phone,
+  Search,
+  RefreshCw,
+  Printer,
+  Clock,
+  ChefHat,
+  PackageCheck,
+  Bike,
+  CheckCircle2,
+  XCircle,
+  CircleDot,
+  Receipt,
+  User,
+  AlertTriangle,
+  Loader2,
+  Hourglass,
 } from "lucide-react";
 import { useApp } from "@/i18n/AppProviders";
 import { PageHeader, StatusPill } from "@/components/ui-ez/Primitives";
-import { EmptyOrders } from "@/components/ui-ez/States";
-import { ORDERS, pickName, formatMoney, type Order, type OrderStatus } from "@/data/mock";
+import { EmptyOrders, EmptySearch, SkeletonList } from "@/components/ui-ez/States";
+import { QueryState, errorMessage } from "@/components/ui-ez/QueryState";
+import { ordersApi } from "@/lib/api/vendor";
+import type { Order, OrderAction, OrderStatus } from "@/lib/api/types";
+import { formatMoney, formatTime } from "@/lib/format";
+import {
+  AWAITING_KEY,
+  CANCELLED_BY_KEY,
+  PAYMENT_KEY,
+  STATUS_LABEL_KEY,
+  useAcceptCountdown,
+} from "@/lib/orders";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/orders")({
+  validateSearch: (search: Record<string, unknown>): { q?: string; order?: number } => ({
+    q: typeof search.q === "string" ? search.q : undefined,
+    order:
+      search.order !== undefined && !Number.isNaN(Number(search.order))
+        ? Number(search.order)
+        : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "الطلبات — EZ Vendor" },
@@ -21,74 +56,103 @@ export const Route = createFileRoute("/orders")({
   component: OrdersPage,
 });
 
-const ACTIVE_STATUSES: OrderStatus[] = ["new", "accepted", "preparing", "ready", "pickedup", "delivering"];
-const HISTORY_STATUSES: OrderStatus[] = ["completed", "cancelled"];
-
-const STATUS_LABEL_KEY: Record<OrderStatus, string> = {
-  new: "common.new",
-  accepted: "orders.accepted",
-  preparing: "common.preparing",
-  ready: "common.ready",
-  pickedup: "orders.pickedup",
-  delivering: "common.delivering",
-  completed: "common.completed",
-  cancelled: "common.cancelled",
-};
+type Tab = "active" | "history";
+const PAGE_SIZE = 30;
 
 function OrdersPage() {
-  const { t, locale, dir } = useApp();
-  const [tab, setTab] = useState<"active" | "history">("active");
+  const { t, dir } = useApp();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("active");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string>(ORDERS[0]?.id ?? "");
-  const [orders, setOrders] = useState<Order[]>(ORDERS);
+  const [query, setQuery] = useState(search.q ?? "");
+  const [debounced, setDebounced] = useState(search.q ?? "");
+  const [perPage, setPerPage] = useState(PAGE_SIZE);
+  const [selectedId, setSelectedId] = useState<number | undefined>(search.order);
+  const [rejecting, setRejecting] = useState<Order | null>(null);
 
-  // Live countdown for new orders
-  const tickRef = useRef<number | null>(null);
+  // Topbar search / notification deep-links update the URL.
   useEffect(() => {
-    tickRef.current = window.setInterval(() => {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.status === "new" && o.acceptDeadlineSec && o.acceptDeadlineSec > 0
-            ? { ...o, acceptDeadlineSec: o.acceptDeadlineSec - 1 }
-            : o
-        )
-      );
-    }, 1000);
-    return () => {
-      if (tickRef.current) window.clearInterval(tickRef.current);
-    };
-  }, []);
-
-  const visible = useMemo(() => {
-    const pool = orders.filter((o) =>
-      tab === "active" ? ACTIVE_STATUSES.includes(o.status) : HISTORY_STATUSES.includes(o.status)
-    );
-    const filtered = statusFilter === "all" ? pool : pool.filter((o) => o.status === statusFilter);
-    const q = query.trim().toLowerCase();
-    if (!q) return filtered;
-    return filtered.filter(
-      (o) =>
-        o.id.toLowerCase().includes(q) ||
-        pickName(o.customer, locale).toLowerCase().includes(q) ||
-        o.phone.includes(q)
-    );
-  }, [orders, tab, statusFilter, query, locale]);
-
-  const selected = orders.find((o) => o.id === selectedId) ?? visible[0];
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: 0 };
-    const pool = orders.filter((o) =>
-      tab === "active" ? ACTIVE_STATUSES.includes(o.status) : HISTORY_STATUSES.includes(o.status)
-    );
-    c.all = pool.length;
-    for (const s of [...ACTIVE_STATUSES, ...HISTORY_STATUSES]) {
-      c[s] = pool.filter((o) => o.status === s).length;
+    if (search.q !== undefined) {
+      setQuery(search.q);
+      setDebounced(search.q);
     }
-    return c;
-  }, [orders, tab]);
+  }, [search.q]);
+  useEffect(() => {
+    if (search.order !== undefined) setSelectedId(search.order);
+  }, [search.order]);
 
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(query.trim()), 400);
+    return () => window.clearTimeout(id);
+  }, [query]);
+
+  // Server-side list: counts = chip numbers; search matches EZ-00042 / 42 / name / phone.
+  const list = useQuery({
+    queryKey: ["orders", tab, statusFilter, debounced, perPage],
+    queryFn: () =>
+      ordersApi.list({
+        tab,
+        status: statusFilter,
+        search: debounced || undefined,
+        per_page: perPage,
+      }),
+    placeholderData: (prev) => prev,
+    refetchInterval: 20_000, // Pusher is best-effort — poll as a fallback
+  });
+
+  const orders = list.data?.orders ?? [];
+  const currentId = selectedId ?? orders[0]?.id;
+  const listItem = orders.find((o) => o.id === currentId);
+
+  // Details are fetched per order so realtime events refresh them directly.
+  const details = useQuery({
+    queryKey: ["order", currentId],
+    queryFn: () => ordersApi.show(currentId!),
+    enabled: currentId !== undefined,
+    initialData: listItem,
+    refetchInterval: 20_000,
+  });
+  const selected = details.data ?? listItem;
+
+  const onUpdated = (o: Order) => {
+    queryClient.setQueryData(["order", o.id], o);
+    queryClient.invalidateQueries({ queryKey: ["orders"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+
+  const action = useMutation({
+    mutationFn: ({ order, act, reason }: { order: Order; act: OrderAction; reason?: string }) => {
+      switch (act) {
+        case "accept":
+          return ordersApi.accept(order.id);
+        case "reject":
+          return ordersApi.reject(order.id, reason ?? "");
+        case "start_preparing":
+          return ordersApi.startPreparing(order.id);
+        case "mark_ready":
+          return ordersApi.markReady(order.id);
+      }
+    },
+    onSuccess: (o) => {
+      onUpdated(o);
+      setRejecting(null);
+    },
+    // 409 etc: the server message is ready for display.
+    onError: (e, vars) => {
+      toast.error(errorMessage(e, t("states.errorDesc")));
+      queryClient.invalidateQueries({ queryKey: ["order", vars.order.id] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+
+  const runAction = (order: Order, act: OrderAction) => {
+    if (act === "reject") setRejecting(order);
+    else action.mutate({ order, act });
+  };
+
+  const counts = list.data?.counts ?? {};
   const tabs: { key: OrderStatus | "all"; labelKey: string }[] =
     tab === "active"
       ? [
@@ -106,8 +170,13 @@ function OrdersPage() {
           { key: "cancelled", labelKey: "common.cancelled" },
         ];
 
-  const updateStatus = (id: string, status: OrderStatus) => {
-    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status, acceptDeadlineSec: undefined } : o)));
+  const select = (id: number) => {
+    setSelectedId(id);
+    navigate({
+      to: "/orders",
+      search: (s: Record<string, unknown>) => ({ ...s, order: id }) as never,
+      replace: true,
+    });
   };
 
   return (
@@ -116,8 +185,15 @@ function OrdersPage() {
         title={t("orders.title")}
         subtitle={t("orders.subtitle")}
         actions={
-          <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent">
-            <RefreshCw className="h-3.5 w-3.5" /> {t("orders.refresh")}
+          <button
+            onClick={() => {
+              list.refetch();
+              if (currentId !== undefined) details.refetch();
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", list.isFetching && "animate-spin")} />{" "}
+            {t("orders.refresh")}
           </button>
         }
       />
@@ -130,10 +206,14 @@ function OrdersPage() {
             onClick={() => {
               setTab(key);
               setStatusFilter("all");
+              setPerPage(PAGE_SIZE);
+              setSelectedId(undefined);
             }}
             className={cn(
               "rounded-lg px-4 py-1.5 text-xs font-semibold transition",
-              tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              tab === key
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {t(key === "active" ? "orders.tabActive" : "orders.tabHistory")}
@@ -147,7 +227,12 @@ function OrdersPage() {
           {/* Search + filter chips */}
           <div className="border-b border-border p-3">
             <div className="relative">
-              <Search className={cn("pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground", dir === "rtl" ? "right-3" : "left-3")} />
+              <Search
+                className={cn(
+                  "pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+                  dir === "rtl" ? "right-3" : "left-3",
+                )}
+              />
               <input
                 type="search"
                 value={query}
@@ -155,7 +240,7 @@ function OrdersPage() {
                 placeholder={t("common.searchOrders")}
                 className={cn(
                   "h-10 w-full rounded-lg border border-input bg-secondary/60 text-sm outline-none focus:border-ring focus:bg-background",
-                  dir === "rtl" ? "pr-9 pl-3" : "pl-9 pr-3"
+                  dir === "rtl" ? "pr-9 pl-3" : "pl-9 pr-3",
                 )}
               />
             </div>
@@ -166,16 +251,24 @@ function OrdersPage() {
                 return (
                   <button
                     key={tb.key}
-                    onClick={() => setStatusFilter(tb.key)}
+                    onClick={() => {
+                      setStatusFilter(tb.key);
+                      setPerPage(PAGE_SIZE);
+                    }}
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
                       active
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-card text-muted-foreground hover:text-foreground"
+                        : "border-border bg-card text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {t(tb.labelKey)}
-                    <span className={cn("ez-num rounded-full px-1.5 text-[10px]", active ? "bg-primary-foreground/20" : "bg-muted")}>
+                    <span
+                      className={cn(
+                        "ez-num rounded-full px-1.5 text-[10px]",
+                        active ? "bg-primary-foreground/20" : "bg-muted",
+                      )}
+                    >
                       {count}
                     </span>
                   </button>
@@ -186,31 +279,66 @@ function OrdersPage() {
 
           {/* Order cards list */}
           <div className="max-h-[calc(100vh-340px)] divide-y divide-border overflow-y-auto">
-            {visible.map((o) => (
-              <OrderListCard
-                key={o.id}
-                order={o}
-                selected={selected?.id === o.id}
-                onClick={() => setSelectedId(o.id)}
-                onAccept={() => updateStatus(o.id, "accepted")}
-                onReject={() => updateStatus(o.id, "cancelled")}
-              />
-            ))}
-            {visible.length === 0 && (
-              <div className="p-4">
-                <EmptyOrders
-                  title={t("states.emptyOrdersTitle")}
-                  description={t("states.emptyOrdersDesc")}
-                />
-              </div>
-            )}
+            <QueryState query={list} loading={<SkeletonList rows={5} />}>
+              {(data) =>
+                data.orders.length === 0 ? (
+                  <div className="p-4">
+                    {debounced ? (
+                      <EmptySearch
+                        title={t("states.emptySearchTitle")}
+                        description={t("states.emptySearchDesc")}
+                      />
+                    ) : (
+                      <EmptyOrders
+                        title={t("states.emptyOrdersTitle")}
+                        description={t("states.emptyOrdersDesc")}
+                        actionLabel={t("orders.refresh")}
+                        onAction={() => list.refetch()}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {data.orders.map((o) => (
+                      <OrderListCard
+                        key={o.id}
+                        order={o}
+                        selected={currentId === o.id}
+                        busy={action.isPending && action.variables?.order.id === o.id}
+                        onClick={() => select(o.id)}
+                        onAction={(act) => runAction(o, act)}
+                      />
+                    ))}
+                    {data.meta.current_page < data.meta.last_page && (
+                      <div className="p-3 text-center">
+                        <button
+                          onClick={() => setPerPage((n) => n + PAGE_SIZE)}
+                          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold hover:bg-accent"
+                        >
+                          {list.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          {t("common.loadMore")} ({data.orders.length}/{data.meta.total})
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )
+              }
+            </QueryState>
           </div>
         </div>
 
         {/* RIGHT: details */}
         <div className="ez-card ez-shadow overflow-hidden">
           {selected ? (
-            <OrderDetails order={selected} onUpdate={(s) => updateStatus(selected.id, s)} />
+            <OrderDetails
+              order={selected}
+              busyAction={
+                action.isPending && action.variables?.order.id === selected.id
+                  ? action.variables.act
+                  : null
+              }
+              onAction={(act) => runAction(selected, act)}
+            />
           ) : (
             <div className="grid h-full place-items-center p-12 text-sm text-muted-foreground">
               <Receipt className="mb-3 h-10 w-10 opacity-30" />
@@ -219,23 +347,51 @@ function OrdersPage() {
           )}
         </div>
       </div>
+
+      {rejecting && (
+        <RejectDialog
+          order={rejecting}
+          pending={action.isPending}
+          onClose={() => setRejecting(null)}
+          onConfirm={(reason) => action.mutate({ order: rejecting, act: "reject", reason })}
+        />
+      )}
     </div>
   );
 }
 
 /* ---------- Order list card ---------- */
 function OrderListCard({
-  order, selected, onClick, onAccept, onReject,
+  order,
+  selected,
+  busy,
+  onClick,
+  onAction,
 }: {
   order: Order;
   selected: boolean;
+  busy: boolean;
   onClick: () => void;
-  onAccept: () => void;
-  onReject: () => void;
+  onAction: (a: OrderAction) => void;
 }) {
-  const { t, locale } = useApp();
+  const { t } = useApp();
+  const queryClient = useQueryClient();
   const isNew = order.status === "new";
-  const urgent = isNew && (order.acceptDeadlineSec ?? 0) < 60;
+  const left = useAcceptCountdown(order);
+  const urgent = isNew && left < 60;
+
+  // Accept window elapsed → the server auto-cancels; refresh to pick it up.
+  useEffect(() => {
+    if (!isNew || left > 0 || order.accept_seconds_left === null) return;
+    const id = window.setTimeout(
+      () => queryClient.invalidateQueries({ queryKey: ["orders"] }),
+      3000,
+    );
+    return () => window.clearTimeout(id);
+  }, [isNew, left, order.accept_seconds_left, queryClient]);
+
+  const canAccept = order.available_actions.includes("accept");
+  const canReject = order.available_actions.includes("reject");
 
   return (
     <button
@@ -243,7 +399,7 @@ function OrderListCard({
       className={cn(
         "group block w-full p-4 text-start transition",
         selected ? "bg-primary-soft/60" : "hover:bg-accent/40",
-        isNew && "relative"
+        isNew && "relative",
       )}
     >
       {isNew && (
@@ -251,14 +407,14 @@ function OrderListCard({
           className={cn(
             "absolute inset-y-0 w-1",
             urgent ? "bg-destructive" : "bg-primary",
-            "start-0"
+            "start-0",
           )}
         />
       )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="ez-num text-sm font-bold text-primary">{order.id}</span>
+            <span className="ez-num text-sm font-bold text-primary">{order.reference}</span>
             <StatusPill status={order.status} label={t(STATUS_LABEL_KEY[order.status])} />
             {urgent && (
               <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-bold text-destructive">
@@ -266,9 +422,9 @@ function OrderListCard({
               </span>
             )}
           </div>
-          <p className="mt-1.5 truncate font-semibold">{pickName(order.customer, locale)}</p>
+          <p className="mt-1.5 truncate font-semibold">{order.customer.name}</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {order.items.length} × {order.items.map((i) => pickName(i.name, locale)).join("، ")}
+            {order.items_count} × {order.items.map((i) => i.name).join("، ")}
           </p>
         </div>
         <div className="text-end shrink-0">
@@ -276,34 +432,65 @@ function OrderListCard({
           <p className="ez-num text-[10px] text-muted-foreground">{t("common.currency")}</p>
           <p className="ez-num mt-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
             <Clock className="h-3 w-3" />
-            {order.minutesAgo}m {t("orders.elapsed")}
+            {order.minutes_ago}m {t("orders.elapsed")}
           </p>
         </div>
       </div>
 
       {isNew && (
         <div className="mt-3 flex items-center gap-2">
-          <CountdownBar seconds={order.acceptDeadlineSec ?? 0} total={180} />
-          <div className="flex gap-1.5">
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); onAccept(); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onAccept(); } }}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-success px-2.5 py-1.5 text-xs font-bold text-success-foreground hover:opacity-90"
-            >
-              <Check className="h-3.5 w-3.5" /> {t("common.accept")}
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); onReject(); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onReject(); } }}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/15"
-            >
-              <X className="h-3.5 w-3.5" /> {t("common.reject")}
-            </span>
-          </div>
+          <CountdownBar seconds={left} total={order.accept_window_seconds || 180} />
+          {(canAccept || canReject) && (
+            <div className="flex gap-1.5">
+              {canAccept && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!busy) onAction("accept");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.stopPropagation();
+                      if (!busy) onAction("accept");
+                    }
+                  }}
+                  className={cn(
+                    "inline-flex cursor-pointer items-center gap-1 rounded-md bg-success px-2.5 py-1.5 text-xs font-bold text-success-foreground hover:opacity-90",
+                    busy && "opacity-60",
+                  )}
+                >
+                  {busy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}{" "}
+                  {t("common.accept")}
+                </span>
+              )}
+              {canReject && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAction("reject");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.stopPropagation();
+                      onAction("reject");
+                    }
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/15"
+                >
+                  <X className="h-3.5 w-3.5" /> {t("common.reject")}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </button>
@@ -329,9 +516,17 @@ function CountdownBar({ seconds, total }: { seconds: number; total: number }) {
 }
 
 /* ---------- Details panel ---------- */
-function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderStatus) => void }) {
+function OrderDetails({
+  order,
+  busyAction,
+  onAction,
+}: {
+  order: Order;
+  busyAction: OrderAction | null;
+  onAction: (a: OrderAction) => void;
+}) {
   const { t, locale } = useApp();
-  const subtotal = order.items.reduce((s, i) => s + i.qty * i.price, 0);
+  const left = useAcceptCountdown(order);
 
   return (
     <div className="flex h-full flex-col">
@@ -339,19 +534,25 @@ function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderSt
       <div className="border-b border-border bg-secondary/40 p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="ez-num text-lg font-bold text-primary">{order.id}</p>
+            <p className="ez-num text-lg font-bold text-primary">{order.reference}</p>
             <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" /> {t("orders.placedAt")} {order.minutesAgo}m {t("orders.elapsed")}
+              <Clock className="h-3.5 w-3.5" /> {t("orders.placedAt")}{" "}
+              {formatTime(order.placed_at, locale)} · {order.minutes_ago}m {t("orders.elapsed")}
             </p>
           </div>
           <StatusPill status={order.status} label={t(STATUS_LABEL_KEY[order.status])} />
         </div>
+        {order.status === "new" && (
+          <div className="mt-3">
+            <CountdownBar seconds={left} total={order.accept_window_seconds || 180} />
+          </div>
+        )}
       </div>
 
       <div className="flex-1 space-y-5 overflow-y-auto p-5">
         {/* Timeline */}
         <Section title={t("orders.timeline")}>
-          <Timeline status={order.status} />
+          <Timeline order={order} />
         </Section>
 
         {/* Customer */}
@@ -359,17 +560,46 @@ function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderSt
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-muted-foreground" />
-              <span className="font-semibold">{pickName(order.customer, locale)}</span>
+              <span className="font-semibold">{order.customer.name}</span>
             </div>
-            <div className="ez-num flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4" /> {order.phone}
-            </div>
-            <div className="flex items-start gap-2 text-muted-foreground">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{pickName(order.address, locale)}</span>
-            </div>
+            {order.customer.phone && (
+              <div className="ez-num flex items-center gap-2 text-muted-foreground">
+                <Phone className="h-4 w-4" /> <span dir="ltr">{order.customer.phone}</span>
+              </div>
+            )}
+            {order.delivery_address?.address && (
+              <div className="flex items-start gap-2 text-muted-foreground">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  {order.delivery_address.address}
+                  {order.delivery_address.notes && (
+                    <span className="block text-[11px] italic">{order.delivery_address.notes}</span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         </Section>
+
+        {/* Driver */}
+        {order.driver?.id && (
+          <Section title={t("orders.driver")}>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex items-center gap-2">
+                <Bike className="h-4 w-4 text-muted-foreground" />
+                <span className="font-semibold">{order.driver.name}</span>
+              </div>
+              {order.driver.phone && (
+                <div className="ez-num flex items-center gap-2 text-muted-foreground">
+                  <Phone className="h-4 w-4" /> <span dir="ltr">{order.driver.phone}</span>
+                </div>
+              )}
+              {order.driver.vehicle && (
+                <p className="text-xs text-muted-foreground">{order.driver.vehicle}</p>
+              )}
+            </div>
+          </Section>
+        )}
 
         {/* Items */}
         <Section title={t("orders.orderItems")}>
@@ -377,49 +607,70 @@ function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderSt
             <table className="w-full text-sm">
               <thead className="bg-secondary/50 text-[11px] uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-start font-semibold">{t("common.all")}</th>
+                  <th className="px-3 py-2 text-start font-semibold">{t("orders.items")}</th>
                   <th className="px-3 py-2 text-center font-semibold">{t("orders.qty")}</th>
                   <th className="px-3 py-2 text-end font-semibold">{t("orders.lineTotal")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {order.items.map((it, idx) => (
-                  <tr key={idx}>
+                {order.items.map((it) => (
+                  <tr key={it.id}>
                     <td className="px-3 py-2.5">
-                      <p className="font-medium">{pickName(it.name, locale)}</p>
+                      <p className="font-medium">{it.name}</p>
+                      {addOnNames(it.add_ons) && (
+                        <p className="mt-0.5 text-[11px] text-info">+ {addOnNames(it.add_ons)}</p>
+                      )}
                       {it.notes && (
                         <p className="mt-0.5 text-[11px] italic text-muted-foreground">
-                          {pickName(it.notes, locale)}
+                          {it.notes}
                         </p>
                       )}
                       <p className="ez-num mt-0.5 text-[11px] text-muted-foreground">
-                        {formatMoney(it.price)} {t("common.currency")}
+                        {formatMoney(it.unit_price)} {t("common.currency")}
                       </p>
                     </td>
-                    <td className="ez-num px-3 py-2.5 text-center font-bold">×{it.qty}</td>
+                    <td className="ez-num px-3 py-2.5 text-center font-bold">×{it.quantity}</td>
                     <td className="ez-num px-3 py-2.5 text-end font-semibold">
-                      {formatMoney(it.qty * it.price)}
+                      {formatMoney(it.line_total)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {order.special_notes && (
+            <p className="mt-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+              {order.special_notes}
+            </p>
+          )}
         </Section>
 
         {/* Totals */}
         <Section title="">
           <div className="space-y-1.5 text-sm">
-            <Row label={t("orders.subtotal")} value={`${formatMoney(subtotal)} ${t("common.currency")}`} />
-            <Row label={t("orders.deliveryFee")} value={`${formatMoney(order.deliveryFee)} ${t("common.currency")}`} />
+            <Row
+              label={t("orders.subtotal")}
+              value={`${formatMoney(order.subtotal)} ${t("common.currency")}`}
+            />
+            {order.discount > 0 && (
+              <Row
+                label={t("orders.discount")}
+                value={`-${formatMoney(order.discount)} ${t("common.currency")}`}
+              />
+            )}
+            <Row
+              label={t("orders.deliveryFee")}
+              value={`${formatMoney(order.delivery_fee)} ${t("common.currency")}`}
+            />
             <div className="my-2 border-t border-dashed border-border" />
             <Row
               label={t("orders.total")}
-              value={`${formatMoney(subtotal + order.deliveryFee)} ${t("common.currency")}`}
+              value={`${formatMoney(order.total)} ${t("common.currency")}`}
               bold
             />
             <p className="ez-num pt-1 text-[11px] text-muted-foreground">
-              {pickName(order.paymentMethod, locale)}
+              {t(PAYMENT_KEY[order.payment_method] ?? order.payment_method)} ·{" "}
+              {order.payment_status}
             </p>
           </div>
         </Section>
@@ -428,14 +679,24 @@ function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderSt
       {/* Sticky action bar */}
       <div className="border-t border-border bg-card p-4">
         <div className="flex items-center gap-2">
-          <button className="grid h-10 w-10 place-items-center rounded-lg border border-border hover:bg-accent" title="Call">
-            <Phone className="h-4 w-4" />
-          </button>
-          <button className="grid h-10 w-10 place-items-center rounded-lg border border-border hover:bg-accent" title="Print">
+          {order.customer.phone ? (
+            <a
+              href={`tel:${order.customer.phone}`}
+              className="grid h-10 w-10 place-items-center rounded-lg border border-border hover:bg-accent"
+              title={t("orders.callCustomer")}
+            >
+              <Phone className="h-4 w-4" />
+            </a>
+          ) : null}
+          <button
+            onClick={() => window.print()}
+            className="grid h-10 w-10 place-items-center rounded-lg border border-border hover:bg-accent"
+            title={t("orders.printReceipt")}
+          >
             <Printer className="h-4 w-4" />
           </button>
           <div className="flex-1">
-            <PrimaryAction order={order} onUpdate={onUpdate} />
+            <PrimaryAction order={order} busyAction={busyAction} onAction={onAction} />
           </div>
         </div>
       </div>
@@ -443,10 +704,23 @@ function OrderDetails({ order, onUpdate }: { order: Order; onUpdate: (s: OrderSt
   );
 }
 
+function addOnNames(addOns: unknown): string {
+  if (!Array.isArray(addOns) || addOns.length === 0) return "";
+  return addOns
+    .map((a) =>
+      a && typeof a === "object" && "name" in a ? String((a as { name: unknown }).name) : String(a),
+    )
+    .join("، ");
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      {title && <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{title}</h3>}
+      {title && (
+        <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </h3>
+      )}
       {children}
     </div>
   );
@@ -455,130 +729,299 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className={cn("text-muted-foreground", bold && "text-foreground font-bold text-base")}>{label}</span>
-      <span className={cn("ez-num font-semibold", bold && "text-base font-bold text-primary")}>{value}</span>
+      <span className={cn("text-muted-foreground", bold && "text-foreground font-bold text-base")}>
+        {label}
+      </span>
+      <span className={cn("ez-num font-semibold", bold && "text-base font-bold text-primary")}>
+        {value}
+      </span>
     </div>
   );
 }
 
-function PrimaryAction({ order, onUpdate }: { order: Order; onUpdate: (s: OrderStatus) => void }) {
+/**
+ * Buttons come ONLY from available_actions (accept / reject / start_preparing / mark_ready).
+ * Picked-up & complete are done by the driver app — when there's nothing to do we show `awaiting`.
+ */
+function PrimaryAction({
+  order,
+  busyAction,
+  onAction,
+}: {
+  order: Order;
+  busyAction: OrderAction | null;
+  onAction: (a: OrderAction) => void;
+}) {
   const { t } = useApp();
-  switch (order.status) {
-    case "new":
-      return (
-        <div className="flex gap-2">
-          <button
-            onClick={() => onUpdate("cancelled")}
-            className="flex-1 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm font-bold text-destructive hover:bg-destructive/15"
-          >
-            <X className="me-1 inline h-4 w-4" /> {t("common.reject")}
-          </button>
-          <button
-            onClick={() => onUpdate("accepted")}
-            className="flex-[2] rounded-lg bg-success px-3 py-2.5 text-sm font-bold text-success-foreground hover:opacity-90"
-          >
-            <Check className="me-1 inline h-4 w-4" /> {t("common.accept")}
-          </button>
-        </div>
-      );
-    case "accepted":
-      return (
-        <button onClick={() => onUpdate("preparing")} className="w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90">
-          <ChefHat className="me-1 inline h-4 w-4" /> {t("orders.startPrep")}
-        </button>
-      );
-    case "preparing":
-      return (
-        <button onClick={() => onUpdate("ready")} className="w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90">
-          <PackageCheck className="me-1 inline h-4 w-4" /> {t("orders.markReady")}
-        </button>
-      );
-    case "ready":
-      return (
-        <button onClick={() => onUpdate("pickedup")} className="w-full rounded-lg bg-info px-3 py-2.5 text-sm font-bold text-info-foreground hover:opacity-90">
-          <Bike className="me-1 inline h-4 w-4" /> {t("orders.markPickedUp")}
-        </button>
-      );
-    case "pickedup":
-    case "delivering":
-      return (
-        <button onClick={() => onUpdate("completed")} className="w-full rounded-lg bg-success px-3 py-2.5 text-sm font-bold text-success-foreground hover:opacity-90">
-          <CheckCircle2 className="me-1 inline h-4 w-4" /> {t("orders.complete")}
-        </button>
-      );
-    default:
-      return (
-        <div className="grid place-items-center rounded-lg bg-muted px-3 py-2.5 text-xs font-semibold text-muted-foreground">
-          —
-        </div>
-      );
-  }
-}
+  const acts = order.available_actions;
+  const spin = (a: OrderAction) => busyAction === a;
+  const disabled = busyAction !== null;
 
-/* ---------- Timeline ---------- */
-function Timeline({ status }: { status: OrderStatus }) {
-  const { t } = useApp();
-  const isCancelled = status === "cancelled";
-
-  const steps: { key: OrderStatus; labelKey: string; icon: React.ReactNode }[] = [
-    { key: "new", labelKey: "common.new", icon: <CircleDot className="h-3.5 w-3.5" /> },
-    { key: "accepted", labelKey: "orders.accepted", icon: <Check className="h-3.5 w-3.5" /> },
-    { key: "preparing", labelKey: "common.preparing", icon: <ChefHat className="h-3.5 w-3.5" /> },
-    { key: "ready", labelKey: "common.ready", icon: <PackageCheck className="h-3.5 w-3.5" /> },
-    { key: "pickedup", labelKey: "orders.pickedup", icon: <Bike className="h-3.5 w-3.5" /> },
-    { key: "completed", labelKey: "common.completed", icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-  ];
-
-  if (isCancelled) {
+  if (acts.length === 0) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-        <XCircle className="h-5 w-5" />
-        <span className="font-semibold">{t("common.cancelled")}</span>
+      <div className="flex items-center justify-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-xs font-semibold text-muted-foreground">
+        {order.awaiting ? (
+          <>
+            <Hourglass className="h-4 w-4" /> {t(AWAITING_KEY[order.awaiting])}
+          </>
+        ) : (
+          "—"
+        )}
       </div>
     );
   }
 
-  const order: OrderStatus[] = ["new", "accepted", "preparing", "ready", "pickedup", "delivering", "completed"];
-  const currentIdx = order.indexOf(status);
+  return (
+    <div className="flex gap-2">
+      {acts.includes("reject") && (
+        <button
+          disabled={disabled}
+          onClick={() => onAction("reject")}
+          className="flex-1 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm font-bold text-destructive hover:bg-destructive/15 disabled:opacity-60"
+        >
+          <X className="me-1 inline h-4 w-4" /> {t("common.reject")}
+        </button>
+      )}
+      {acts.includes("accept") && (
+        <button
+          disabled={disabled}
+          onClick={() => onAction("accept")}
+          className="flex-[2] rounded-lg bg-success px-3 py-2.5 text-sm font-bold text-success-foreground hover:opacity-90 disabled:opacity-60"
+        >
+          {spin("accept") ? (
+            <Loader2 className="me-1 inline h-4 w-4 animate-spin" />
+          ) : (
+            <Check className="me-1 inline h-4 w-4" />
+          )}{" "}
+          {t("common.accept")}
+        </button>
+      )}
+      {acts.includes("start_preparing") && (
+        <button
+          disabled={disabled}
+          onClick={() => onAction("start_preparing")}
+          className="flex-1 rounded-lg bg-primary px-3 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+        >
+          {spin("start_preparing") ? (
+            <Loader2 className="me-1 inline h-4 w-4 animate-spin" />
+          ) : (
+            <ChefHat className="me-1 inline h-4 w-4" />
+          )}{" "}
+          {t("orders.startPrep")}
+        </button>
+      )}
+      {acts.includes("mark_ready") && (
+        <button
+          disabled={disabled}
+          onClick={() => onAction("mark_ready")}
+          className={cn(
+            "flex-1 rounded-lg px-3 py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-60",
+            acts.includes("start_preparing")
+              ? "border border-primary/30 bg-primary-soft text-primary"
+              : "bg-primary text-primary-foreground",
+          )}
+        >
+          {spin("mark_ready") ? (
+            <Loader2 className="me-1 inline h-4 w-4 animate-spin" />
+          ) : (
+            <PackageCheck className="me-1 inline h-4 w-4" />
+          )}{" "}
+          {t("orders.markReady")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Timeline (6 steps from the server; `delivering` marks pickedup as current) ---------- */
+const STEP_ICON: Partial<Record<OrderStatus, React.ReactNode>> = {
+  new: <CircleDot className="h-3.5 w-3.5" />,
+  accepted: <Check className="h-3.5 w-3.5" />,
+  preparing: <ChefHat className="h-3.5 w-3.5" />,
+  ready: <PackageCheck className="h-3.5 w-3.5" />,
+  pickedup: <Bike className="h-3.5 w-3.5" />,
+  completed: <CheckCircle2 className="h-3.5 w-3.5" />,
+};
+
+function Timeline({ order }: { order: Order }) {
+  const { t, locale } = useApp();
+
+  if (order.status === "cancelled") {
+    const c = order.cancellation;
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="flex items-center gap-3">
+          <XCircle className="h-5 w-5" />
+          <span className="font-semibold">{t("common.cancelled")}</span>
+          {c?.cancelled_at && (
+            <span className="ez-num ms-auto text-[11px]">{formatTime(c.cancelled_at, locale)}</span>
+          )}
+        </div>
+        {c && (
+          <p className="mt-2 text-xs">
+            {t(CANCELLED_BY_KEY[c.cancelled_by] ?? c.cancelled_by)}
+            {c.reason && <span className="block text-destructive/80">{c.reason}</span>}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const steps = order.timeline;
+  const lastReached = steps.reduce((idx, s, i) => (s.reached ? i : idx), -1);
+  const finished = order.status === "completed";
 
   return (
     <ol className="space-y-3">
       {steps.map((s, i) => {
-        const stepIdx = order.indexOf(s.key);
-        const done = stepIdx < currentIdx || (s.key === "completed" && status === "completed");
-        const current = stepIdx === currentIdx || (s.key === "pickedup" && status === "delivering");
+        const current = !finished && i === lastReached;
+        const done = s.reached && !current;
         return (
-          <li key={s.key} className="flex items-start gap-3">
+          <li key={s.status} className="flex items-start gap-3">
             <div className="flex flex-col items-center">
               <div
                 className={cn(
                   "grid h-7 w-7 place-items-center rounded-full border-2 transition",
                   done && "border-success bg-success text-success-foreground",
                   current && "border-primary bg-primary text-primary-foreground animate-pulse",
-                  !done && !current && "border-border bg-card text-muted-foreground"
+                  !done && !current && "border-border bg-card text-muted-foreground",
                 )}
               >
-                {s.icon}
+                {STEP_ICON[s.status] ?? <CircleDot className="h-3.5 w-3.5" />}
               </div>
               {i < steps.length - 1 && (
                 <div className={cn("mt-1 h-6 w-0.5", done ? "bg-success" : "bg-border")} />
               )}
             </div>
-            <div className="pt-1">
+            <div className="flex flex-1 items-start justify-between gap-2 pt-1">
               <p
                 className={cn(
                   "text-sm font-semibold",
                   done && "text-success",
                   current && "text-primary",
-                  !done && !current && "text-muted-foreground"
+                  !done && !current && "text-muted-foreground",
                 )}
               >
-                {t(s.labelKey)}
+                {t(
+                  s.status === "pickedup" && order.status === "delivering"
+                    ? "common.delivering"
+                    : STATUS_LABEL_KEY[s.status],
+                )}
               </p>
+              {s.at && (
+                <span className="ez-num text-[11px] text-muted-foreground">
+                  {formatTime(s.at, locale)}
+                </span>
+              )}
             </div>
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/* ---------- Reject dialog (reason is required) ---------- */
+function RejectDialog({
+  order,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  order: Order;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const { t } = useApp();
+  const [reason, setReason] = useState("");
+  const [touched, setTouched] = useState(false);
+  const presets = [
+    "orders.rejectPreset.outOfStock",
+    "orders.rejectPreset.busy",
+    "orders.rejectPreset.closing",
+  ];
+  const invalid = reason.trim().length === 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <form
+        className="ez-card w-full max-w-md border border-border ez-shadow"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          setTouched(true);
+          if (!invalid) onConfirm(reason.trim());
+        }}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 className="text-lg font-bold">{t("orders.rejectTitle")}</h2>
+            <p className="ez-num text-xs text-muted-foreground">{order.reference}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-9 w-9 place-items-center rounded-md text-muted-foreground hover:bg-accent"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="space-y-3 p-5">
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setReason(t(k))}
+                className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+              >
+                {t(k)}
+              </button>
+            ))}
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+              {t("orders.rejectReason")} *
+            </span>
+            <textarea
+              autoFocus
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className={cn(
+                "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring",
+                touched && invalid && "border-destructive",
+              )}
+            />
+            {touched && invalid && (
+              <span className="mt-1 block text-xs text-destructive">
+                {t("orders.reasonRequired")}
+              </span>
+            )}
+          </label>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-secondary/40 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-input bg-card px-4 py-2 text-sm font-semibold hover:bg-accent"
+          >
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {t("common.reject")}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

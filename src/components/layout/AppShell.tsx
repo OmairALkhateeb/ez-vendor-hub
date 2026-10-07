@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { useApp } from "@/i18n/AppProviders";
+import { OfflineWatcher } from "@/components/ui-ez/QueryState";
 import { cn } from "@/lib/utils";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -22,11 +23,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div
         className={cn(
           "flex min-h-screen flex-col",
-          dir === "rtl" ? "lg:mr-[260px]" : "lg:ml-[260px]"
+          dir === "rtl" ? "lg:mr-[260px]" : "lg:ml-[260px]",
         )}
       >
         <Topbar onMenuClick={() => setMobileOpen(true)} />
         <main key={location.pathname} className="ez-fade-in flex-1 px-4 py-6 md:px-6 lg:px-8">
+          <OfflineWatcher />
           {children}
         </main>
       </div>

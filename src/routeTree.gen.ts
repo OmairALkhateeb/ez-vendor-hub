@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WalletRouteImport } from './routes/wallet'
+import { Route as SupportRouteImport } from './routes/support'
 import { Route as StatesRouteImport } from './routes/states'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReviewsRouteImport } from './routes/reviews'
@@ -17,12 +18,19 @@ import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PerformanceRouteImport } from './routes/performance'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as MenuRouteImport } from './routes/menu'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as DesignSystemRouteImport } from './routes/design-system'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BroadcastingAuthRouteImport } from './routes/broadcasting.auth'
 
 const WalletRoute = WalletRouteImport.update({
   id: '/wallet',
   path: '/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StatesRoute = StatesRouteImport.update({
@@ -60,6 +68,11 @@ const MenuRoute = MenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DesignSystemRoute = DesignSystemRouteImport.update({
   id: '/design-system',
   path: '/design-system',
@@ -70,10 +83,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BroadcastingAuthRoute = BroadcastingAuthRouteImport.update({
+  id: '/broadcasting/auth',
+  path: '/broadcasting/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design-system': typeof DesignSystemRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
@@ -81,11 +100,14 @@ export interface FileRoutesByFullPath {
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/states': typeof StatesRoute
+  '/support': typeof SupportRoute
   '/wallet': typeof WalletRoute
+  '/broadcasting/auth': typeof BroadcastingAuthRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design-system': typeof DesignSystemRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
@@ -93,12 +115,15 @@ export interface FileRoutesByTo {
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/states': typeof StatesRoute
+  '/support': typeof SupportRoute
   '/wallet': typeof WalletRoute
+  '/broadcasting/auth': typeof BroadcastingAuthRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/design-system': typeof DesignSystemRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/orders': typeof OrdersRoute
   '/performance': typeof PerformanceRoute
@@ -106,13 +131,16 @@ export interface FileRoutesById {
   '/reviews': typeof ReviewsRoute
   '/settings': typeof SettingsRoute
   '/states': typeof StatesRoute
+  '/support': typeof SupportRoute
   '/wallet': typeof WalletRoute
+  '/broadcasting/auth': typeof BroadcastingAuthRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/design-system'
+    | '/login'
     | '/menu'
     | '/orders'
     | '/performance'
@@ -120,11 +148,14 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/settings'
     | '/states'
+    | '/support'
     | '/wallet'
+    | '/broadcasting/auth'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/design-system'
+    | '/login'
     | '/menu'
     | '/orders'
     | '/performance'
@@ -132,11 +163,14 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/settings'
     | '/states'
+    | '/support'
     | '/wallet'
+    | '/broadcasting/auth'
   id:
     | '__root__'
     | '/'
     | '/design-system'
+    | '/login'
     | '/menu'
     | '/orders'
     | '/performance'
@@ -144,12 +178,15 @@ export interface FileRouteTypes {
     | '/reviews'
     | '/settings'
     | '/states'
+    | '/support'
     | '/wallet'
+    | '/broadcasting/auth'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DesignSystemRoute: typeof DesignSystemRoute
+  LoginRoute: typeof LoginRoute
   MenuRoute: typeof MenuRoute
   OrdersRoute: typeof OrdersRoute
   PerformanceRoute: typeof PerformanceRoute
@@ -157,7 +194,9 @@ export interface RootRouteChildren {
   ReviewsRoute: typeof ReviewsRoute
   SettingsRoute: typeof SettingsRoute
   StatesRoute: typeof StatesRoute
+  SupportRoute: typeof SupportRoute
   WalletRoute: typeof WalletRoute
+  BroadcastingAuthRoute: typeof BroadcastingAuthRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -167,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/wallet'
       fullPath: '/wallet'
       preLoaderRoute: typeof WalletRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/states': {
@@ -218,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MenuRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/design-system': {
       id: '/design-system'
       path: '/design-system'
@@ -232,12 +285,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/broadcasting/auth': {
+      id: '/broadcasting/auth'
+      path: '/broadcasting/auth'
+      fullPath: '/broadcasting/auth'
+      preLoaderRoute: typeof BroadcastingAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DesignSystemRoute: DesignSystemRoute,
+  LoginRoute: LoginRoute,
   MenuRoute: MenuRoute,
   OrdersRoute: OrdersRoute,
   PerformanceRoute: PerformanceRoute,
@@ -245,7 +306,9 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewsRoute: ReviewsRoute,
   SettingsRoute: SettingsRoute,
   StatesRoute: StatesRoute,
+  SupportRoute: SupportRoute,
   WalletRoute: WalletRoute,
+  BroadcastingAuthRoute: BroadcastingAuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -8,18 +8,22 @@ import {
   Star,
   Settings,
   LifeBuoy,
-  Palette,
   Activity,
   X,
+  LogOut,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/i18n/AppProviders";
+import { useAuth, ROUTE_PERMISSIONS } from "@/lib/auth";
+import { ordersApi } from "@/lib/api/vendor";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
   to: string;
   icon: typeof LayoutDashboard;
   key: string;
-  badge?: number;
+  /** Shows the live count of new orders. */
+  badge?: "newOrders";
 };
 
 type NavSection = {
@@ -32,7 +36,7 @@ const SECTIONS: NavSection[] = [
     labelKey: "nav.section.operations",
     items: [
       { to: "/", icon: LayoutDashboard, key: "nav.dashboard" },
-      { to: "/orders", icon: ShoppingBag, key: "nav.orders", badge: 4 },
+      { to: "/orders", icon: ShoppingBag, key: "nav.orders", badge: "newOrders" },
       { to: "/menu", icon: UtensilsCrossed, key: "nav.menu" },
     ],
   },
@@ -49,8 +53,6 @@ const SECTIONS: NavSection[] = [
     labelKey: "nav.section.account",
     items: [
       { to: "/settings", icon: Settings, key: "nav.settings" },
-      { to: "/design-system", icon: Palette, key: "nav.designSystem" },
-      { to: "/states", icon: LifeBuoy, key: "nav.states" },
     ],
   },
 ];
@@ -62,7 +64,21 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { t, dir } = useApp();
+  const { vendor, can, logout } = useAuth();
   const location = useLocation();
+
+  // Chip counts of the active tab — `new` = orders waiting for accept/reject.
+  const badgeQuery = useQuery({
+    queryKey: ["orders", "badge"],
+    queryFn: () => ordersApi.list({ tab: "active", status: "all", per_page: 1 }),
+    refetchInterval: 30_000,
+  });
+  const newOrders = badgeQuery.data?.counts.new ?? 0;
+
+  const allowed = (to: string) => {
+    const perm = ROUTE_PERMISSIONS[to];
+    return !perm || can(perm);
+  };
 
   const isActive = (to: string) =>
     to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
@@ -87,7 +103,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           !mobileOpen &&
             (dir === "rtl"
               ? "translate-x-full lg:translate-x-0"
-              : "-translate-x-full lg:translate-x-0")
+              : "-translate-x-full lg:translate-x-0"),
         )}
       >
         {/* Brand */}
@@ -99,9 +115,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             <span className="text-sm font-semibold text-sidebar-primary-foreground">
               {t("app.name")}
             </span>
-            <span className="text-[11px] text-sidebar-foreground/60">
-              {t("app.tagline")}
-            </span>
+            <span className="text-[11px] text-sidebar-foreground/60">{t("app.tagline")}</span>
           </div>
           {/* Mobile close */}
           <button
@@ -116,85 +130,117 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {SECTIONS.map((section, i) => (
-            <div key={section.labelKey} className={cn(i > 0 && "mt-6")}>
-              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/40">
-                {t(section.labelKey)}
-              </p>
-              <ul className="space-y-0.5">
-                {section.items.map((item) => {
-                  const active = isActive(item.to);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.to}>
-                      <Link
-                        to={item.to}
-                        onClick={onMobileClose}
-                        className={cn(
-                          "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
-                          active
-                            ? "bg-sidebar-accent text-sidebar-primary-foreground"
-                            : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
-                        )}
-                      >
-                        {/* Active accent bar */}
-                        {active && (
-                          <span
+          {SECTIONS.map((section) => ({
+            ...section,
+            items: section.items.filter((it) => allowed(it.to)),
+          }))
+            .filter((section) => section.items.length > 0)
+            .map((section, i) => (
+              <div key={section.labelKey} className={cn(i > 0 && "mt-6")}>
+                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/40">
+                  {t(section.labelKey)}
+                </p>
+                <ul className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const active = isActive(item.to);
+                    const Icon = item.icon;
+                    const badge = item.badge === "newOrders" ? newOrders : 0;
+                    return (
+                      <li key={item.to}>
+                        <Link
+                          to={item.to}
+                          onClick={onMobileClose}
+                          className={cn(
+                            "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
+                            active
+                              ? "bg-sidebar-accent text-sidebar-primary-foreground"
+                              : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                          )}
+                        >
+                          {/* Active accent bar */}
+                          {active && (
+                            <span
+                              className={cn(
+                                "absolute top-1.5 bottom-1.5 w-[3px] rounded-full bg-primary",
+                                dir === "rtl" ? "right-0" : "left-0",
+                              )}
+                            />
+                          )}
+                          <Icon
                             className={cn(
-                              "absolute top-1.5 bottom-1.5 w-[3px] rounded-full bg-primary",
-                              dir === "rtl" ? "right-0" : "left-0"
+                              "h-[18px] w-[18px] shrink-0 transition-colors",
+                              active
+                                ? "text-primary"
+                                : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground",
                             )}
                           />
-                        )}
-                        <Icon
-                          className={cn(
-                            "h-[18px] w-[18px] shrink-0 transition-colors",
-                            active
-                              ? "text-primary"
-                              : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground"
-                          )}
-                        />
-                        <span className="flex-1">{t(item.key)}</span>
-                        {item.badge ? (
-                          <span
-                            className={cn(
-                              "ez-num grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold",
-                              active
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-sidebar-accent text-sidebar-foreground/90"
-                            )}
-                          >
-                            {item.badge}
-                          </span>
-                        ) : null}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                          <span className="flex-1">{t(item.key)}</span>
+                          {badge ? (
+                            <span
+                              className={cn(
+                                "ez-num grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold",
+                                active
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-sidebar-accent text-sidebar-foreground/90",
+                              )}
+                            >
+                              {badge}
+                            </span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
         </nav>
 
         {/* Support + profile */}
         <div className="border-t border-sidebar-border p-3">
-          <button className="mb-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+          <Link
+            to="/support"
+            onClick={onMobileClose}
+            className={cn(
+              "mb-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+              isActive("/support")
+                ? "bg-sidebar-accent text-sidebar-primary-foreground"
+                : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          >
             <LifeBuoy className="h-[18px] w-[18px]" />
             <span>{t("nav.support")}</span>
-          </button>
+          </Link>
           <div className="rounded-lg bg-sidebar-accent/70 p-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
-                م
-              </div>
+              {vendor?.restaurant.logo ? (
+                <img
+                  src={vendor.restaurant.logo}
+                  alt=""
+                  className="h-9 w-9 rounded-full object-cover"
+                />
+              ) : (
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+                  {vendor?.restaurant.name.charAt(0) ?? "E"}
+                </div>
+              )}
               <div className="min-w-0 flex-1 leading-tight">
                 <p className="truncate text-sm font-medium text-sidebar-primary-foreground">
-                  مطعم البركة
+                  {vendor?.restaurant.name}
                 </p>
                 <p className="truncate text-[11px] text-sidebar-foreground/60">
-                  vendor@ez.app
+                  {vendor?.email ?? vendor?.phone}
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="grid h-8 w-8 place-items-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                title={t("topbar.logout")}
+                aria-label={t("topbar.logout")}
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,23 @@
-import { Outlet, createRootRoute, HeadContent, Scripts, Link } from "@tanstack/react-router";
+import {
+  Outlet,
+  createRootRoute,
+  HeadContent,
+  Scripts,
+  Link,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ShieldAlert } from "lucide-react";
 import appCss from "../styles.css?url";
-import { AppProviders } from "@/i18n/AppProviders";
+import { AppProviders, useApp } from "@/i18n/AppProviders";
 import { AppShell } from "@/components/layout/AppShell";
+import { Toaster } from "@/components/ui/sonner";
+import { EmptyState, LoadingState, OfflineState } from "@/components/ui-ez/States";
+import { ApiError } from "@/lib/api/client";
+import { AuthProvider, ROUTE_PERMISSIONS, useAuth } from "@/lib/auth";
+import { RealtimeProvider } from "@/lib/realtime";
 
 function NotFoundComponent() {
   return (
@@ -29,22 +45,45 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "EZ Vendor — لوحة إدارة المطاعم والمتاجر" },
-      { name: "description", content: "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance." },
+      {
+        name: "description",
+        content:
+          "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance.",
+      },
       { name: "author", content: "EZ" },
       { property: "og:title", content: "EZ Vendor — لوحة إدارة المطاعم والمتاجر" },
-      { property: "og:description", content: "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance." },
+      {
+        property: "og:description",
+        content:
+          "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:title", content: "EZ Vendor — لوحة إدارة المطاعم والمتاجر" },
-      { name: "twitter:description", content: "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance." },
-      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/616162e1-558a-443d-9246-d12385aa164c" },
-      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/616162e1-558a-443d-9246-d12385aa164c" },
+      {
+        name: "twitter:description",
+        content:
+          "EZ Super App vendor panel for restaurants & stores: orders, menu, wallet, performance.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/616162e1-558a-443d-9246-d12385aa164c",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/616162e1-558a-443d-9246-d12385aa164c",
+      },
       { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -67,11 +106,92 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 15_000,
+            refetchOnWindowFocus: true,
+            // Don't hammer the server on 4xx (403/404/422 are final answers).
+            retry: (count, error) =>
+              !(error instanceof ApiError && error.status >= 400 && error.status < 500) &&
+              count < 2,
+          },
+        },
+      }),
+  );
+
   return (
     <AppProviders>
-      <AppShell>
-        <Outlet />
-      </AppShell>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RealtimeProvider>
+            <AuthGate />
+            <Toaster position="top-center" richColors />
+          </RealtimeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
     </AppProviders>
+  );
+}
+
+/** Route guard: /login is public, everything else needs a vendor session. */
+function AuthGate() {
+  const { status, can, refreshMe } = useAuth();
+  const { t } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isLogin = location.pathname === "/login";
+
+  useEffect(() => {
+    if (status === "anonymous" && !isLogin) {
+      navigate({ to: "/login", search: { redirect: location.href } as never, replace: true });
+    } else if (status === "authenticated" && isLogin) {
+      navigate({ to: "/", replace: true });
+    }
+  }, [status, isLogin, navigate, location.href]);
+
+  if (isLogin) return status === "authenticated" ? null : <Outlet />;
+
+  if (status === "offline") {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background p-4">
+        <div className="w-full max-w-md">
+          <OfflineState
+            title={t("states.offlineTitle")}
+            description={t("states.offlineDesc")}
+            retryLabel={t("states.retry")}
+            onRetry={() => void refreshMe().catch(() => {})}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (status !== "authenticated") {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background p-4">
+        <div className="w-full max-w-md">
+          <LoadingState label={t("states.loadingLabel")} />
+        </div>
+      </div>
+    );
+  }
+
+  const required = ROUTE_PERMISSIONS[location.pathname];
+  return (
+    <AppShell>
+      {required && !can(required) ? (
+        <EmptyState
+          icon={<ShieldAlert className="h-7 w-7" />}
+          tone="warning"
+          title={t("auth.noPermissionTitle")}
+          description={t("auth.noPermissionDesc")}
+        />
+      ) : (
+        <Outlet />
+      )}
+    </AppShell>
   );
 }
